@@ -3,10 +3,12 @@ package resp
 import (
 	"bufio"
 	"io"
+	"strconv"
 )
 
 type Writer struct {
-	writer io.Writer
+	// Change this from io.Writer to *bufio.Writer so we have access to Flush()
+	writer *bufio.Writer
 }
 
 func NewWriter(w io.Writer) *Writer {
@@ -16,10 +18,18 @@ func NewWriter(w io.Writer) *Writer {
 }
 
 func (w *Writer) WriteSimpleString(s string) error {
-	return nil
+	w.writer.WriteString("+" + s + "\r\n")
+	return w.writer.Flush() // Push it over the TCP network
+}
+
+// WriteBulkString is required for the GET command!
+func (w *Writer) WriteBulkString(s string) error {
+	w.writer.WriteString("$" + strconv.Itoa(len(s)) + "\r\n")
+	w.writer.WriteString(s + "\r\n")
+	return w.writer.Flush()
 }
 
 func (w *Writer) WriteNull() error {
-	_, err := w.writer.Write([]byte("$-1\r\n"))
-	return err
+	w.writer.WriteString("$-1\r\n")
+	return w.writer.Flush()
 }

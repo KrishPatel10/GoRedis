@@ -2,8 +2,11 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"net"
+	"strings"
 
+	"github.com/KrishPatel10/GoRedis.git/internal/resp"
 	store "github.com/KrishPatel10/GoRedis.git/internal/store"
 )
 
@@ -46,5 +49,58 @@ func (s *Server) Start() error {
 func handleConnection(conn net.Conn, cache *store.MemoryStore) {
 	defer conn.Close()
 
-	fmt.Print("Got Connection\n")
+	parser := resp.NewParser(conn)
+	writer := resp.NewWriter(conn)
+
+	for {
+		val, err := parser.Parse()
+
+		if err != nil {
+			if err == io.EOF {
+				fmt.Print("Empty lines")
+				break
+			}
+			fmt.Printf("Connection Error: %s", err)
+		}
+
+		if val.Typ != "array" || len(val.Array) == 0 {
+			continue
+		}
+
+		command := strings.ToUpper(val.Array[0].Value)
+
+		switch command {
+		case "PING":
+			writer.WriteSimpleString("PONG")
+
+		case "SET":
+			if len(val.Array) < 3 {
+				continue
+			}
+
+			key := val.Array[1].Value
+			val := val.Array[2].Value
+
+			cache.SetWithoutExpiry(key, val)
+
+			writer.WriteSimpleString("OK")
+
+		case "GET":
+			if len(val.Array) != 2 {
+				continue
+			}
+
+			key := val.Array[1].Value
+
+			res, exists := cache.Get(key)
+
+			if !exists {
+				writer.WriteNull()
+			} else {
+				writer.WriteBulkString(res) // Clean, exact data return
+			}
+		default:
+			writer.WriteSimpleString("No Command found matching")
+		}
+	}
 }
